@@ -8,9 +8,9 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import re
 
-# 1. Connect to the AI Brains 
-GEMINI_KEY = "PASTE_YOUR_GEMINI_KEY_HERE"
-GROQ_KEY = "PASTE_YOUR_GROQ_KEY_HERE"
+# 1. Connect to the AI Brains (STEP 2: SECURED VIA SECRETS)
+GEMINI_KEY = st.secrets["GEMINI_KEY"]
+GROQ_KEY = st.secrets["GROQ_KEY"]
 
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 groq_client = Groq(api_key=GROQ_KEY)
@@ -117,9 +117,9 @@ if final_input:
                 
                 # Gemini + Llama Synthesis
                 if img:
-                    gem_res = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=[img, full_prompt]).text
+                    gem_res = gemini_client.models.generate_content(model='gemini-2.0-flash', contents=[img, full_prompt]).text
                 else:
-                    gem_res = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=full_prompt).text
+                    gem_res = gemini_client.models.generate_content(model='gemini-2.0-flash', contents=full_prompt).text
                 
                 # Final clean output via Groq
                 final_res = groq_client.chat.completions.create(
