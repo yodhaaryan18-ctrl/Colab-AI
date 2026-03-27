@@ -117,9 +117,9 @@ if final_input:
                 
                 # Gemini + Llama Synthesis
                 if img:
-                    gem_res = gemini_client.models.generate_content(model='gemini-2.0-flash', contents=[img, full_prompt]).text
+                    gem_res = gemini_client.models.generate_content(model='gemini-1.5-flash', contents=[img, full_prompt]).text
                 else:
-                    gem_res = gemini_client.models.generate_content(model='gemini-2.0-flash', contents=full_prompt).text
+                    gem_res = gemini_client.models.generate_content(model='gemini-1.5-flash', contents=full_prompt).text
                 
                 # Final clean output via Groq
                 final_res = groq_client.chat.completions.create(
