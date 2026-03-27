@@ -8,7 +8,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import re
 
-# 1. Connect to the AI Brains (STEP 2: SECURED VIA SECRETS)
+# 1. Connect to the AI Brains 
 GEMINI_KEY = st.secrets["GEMINI_KEY"]
 GROQ_KEY = st.secrets["GROQ_KEY"]
 
@@ -32,7 +32,6 @@ custom_css = """
         margin-bottom: 20px;
     }
     .stChatInputContainer { border-radius: 25px !important; }
-    /* Style the sidebar a bit */
     section[data-testid="stSidebar"] { background-color: #1E1E1E !important; }
 </style>
 """
@@ -46,12 +45,15 @@ with st.sidebar:
     audio_data = st.audio_input("Speak to the bot")
     if audio_data:
         with st.spinner("Transcribing..."):
-            transcription = groq_client.audio.transcriptions.create(
-                file=("audio.wav", audio_data.read()),
-                model="whisper-large-v3",
-            )
-            voice_input_text = transcription.text
-            st.success(f"Captured: {voice_input_text[:30]}...")
+            try:
+                transcription = groq_client.audio.transcriptions.create(
+                    file=("audio.wav", audio_data.read()),
+                    model="whisper-large-v3",
+                )
+                voice_input_text = transcription.text
+                st.success(f"Captured: {voice_input_text[:30]}...")
+            except Exception as e:
+                st.error(f"Voice Error: {e}")
 
     st.divider()
     st.header("⚙️ File Uploads")
@@ -61,14 +63,21 @@ with st.sidebar:
     uploaded_pdf = st.file_uploader("Upload PDF", type=['pdf'])
     pdf_text = ""
     if uploaded_pdf:
-        pdf_reader = PyPDF2.PdfReader(uploaded_pdf)
-        for page in pdf_reader.pages: pdf_text += page.extract_text() + "\n"
+        try:
+            pdf_reader = PyPDF2.PdfReader(uploaded_pdf)
+            for page in pdf_reader.pages: 
+                pdf_text += page.extract_text() + "\n"
+        except Exception:
+            st.warning("Could not read text from this PDF.")
         
     uploaded_csv = st.file_uploader("Upload CSV", type=['csv'])
     csv_context = ""
     if uploaded_csv:
-        df = pd.read_csv(uploaded_csv)
-        csv_context = f"Data Summary:\n{df.head(10).to_markdown()}"
+        try:
+            df = pd.read_csv(uploaded_csv)
+            csv_context = f"Data Summary:\n{df.head(10).to_markdown()}"
+        except Exception:
+            st.warning("Could not read this CSV.")
 
     if st.button("🗑️ Clear Memory"):
         st.session_state.chat_history = []
@@ -81,7 +90,7 @@ for message in st.session_state.chat_history:
     with st.chat_message(role, avatar=avatar):
         st.write(message.split(": ", 1)[1])
 
-# 6. Main Chat Input (Standard & Sleek)
+# 6. Main Chat Input 
 user_input = st.chat_input("Ask anything...")
 
 # If voice was used, it overrides the text input
@@ -97,7 +106,7 @@ if final_input:
     url_match = re.search(r'(https?://\S+)', final_input)
     if url_match:
         try:
-            res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"})
+            res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
             soup = BeautifulSoup(res.text, 'html.parser')
             url_context = " ".join([p.get_text() for p in soup.find_all('p')])[:2000]
         except: pass
@@ -115,8 +124,8 @@ if final_input:
             with st.spinner("Thinking..."):
                 full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}\nWeb Context: {url_context}"
                 
-                # Using the most stable model name for the GENAI library
-                target_model = 'gemini-1.5-flash' 
+                # FIX: Using the newest active Google standard model!
+                target_model = 'gemini-2.5-flash' 
                 
                 try:
                     if img:
@@ -135,5 +144,4 @@ if final_input:
                     st.session_state.chat_history.append(f"Colab Bot: {final_res}")
                 
                 except Exception as e:
-                    st.error(f"Model Error: {e}")
-                    st.info("Tip: Make sure your API keys are correct in the Streamlit Cloud Settings.")
+                    st.error(f"Google API Error: {e}")
