@@ -8,7 +8,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import re
 
-# 1. Connect to the AI Brains 
+# 1. Connect to the AI Brains (STEP 2: SECURED VIA SECRETS)
 GEMINI_KEY = st.secrets["GEMINI_KEY"]
 GROQ_KEY = st.secrets["GROQ_KEY"]
 
@@ -32,6 +32,7 @@ custom_css = """
         margin-bottom: 20px;
     }
     .stChatInputContainer { border-radius: 25px !important; }
+    /* Style the sidebar a bit */
     section[data-testid="stSidebar"] { background-color: #1E1E1E !important; }
 </style>
 """
@@ -45,15 +46,12 @@ with st.sidebar:
     audio_data = st.audio_input("Speak to the bot")
     if audio_data:
         with st.spinner("Transcribing..."):
-            try:
-                transcription = groq_client.audio.transcriptions.create(
-                    file=("audio.wav", audio_data.read()),
-                    model="whisper-large-v3",
-                )
-                voice_input_text = transcription.text
-                st.success(f"Captured: {voice_input_text[:30]}...")
-            except Exception as e:
-                st.error(f"Voice Error: {e}")
+            transcription = groq_client.audio.transcriptions.create(
+                file=("audio.wav", audio_data.read()),
+                model="whisper-large-v3",
+            )
+            voice_input_text = transcription.text
+            st.success(f"Captured: {voice_input_text[:30]}...")
 
     st.divider()
     st.header("⚙️ File Uploads")
@@ -63,40 +61,27 @@ with st.sidebar:
     uploaded_pdf = st.file_uploader("Upload PDF", type=['pdf'])
     pdf_text = ""
     if uploaded_pdf:
-        try:
-            pdf_reader = PyPDF2.PdfReader(uploaded_pdf)
-            for page in pdf_reader.pages: 
-                pdf_text += page.extract_text() + "\n"
-            st.success("PDF Loaded successfully!")
-        except Exception:
-            st.warning("Could not read text from this PDF.")
+        pdf_reader = PyPDF2.PdfReader(uploaded_pdf)
+        for page in pdf_reader.pages: pdf_text += page.extract_text() + "\n"
         
     uploaded_csv = st.file_uploader("Upload CSV", type=['csv'])
     csv_context = ""
     if uploaded_csv:
-        try:
-            df = pd.read_csv(uploaded_csv)
-            csv_context = f"Data Summary:\n{df.head(10).to_markdown()}"
-            st.success("CSV Loaded successfully!")
-        except Exception:
-            st.warning("Could not read this CSV.")
+        df = pd.read_csv(uploaded_csv)
+        csv_context = f"Data Summary:\n{df.head(10).to_markdown()}"
 
     if st.button("🗑️ Clear Memory"):
         st.session_state.chat_history = []
         st.rerun()
 
-# 5. Welcome Message & History
-if len(st.session_state.chat_history) == 0:
-    with st.chat_message("assistant", avatar="🤖"):
-        st.markdown("### Welcome to the Studio! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
-
+# 5. Display History
 for message in st.session_state.chat_history:
     role = "user" if message.startswith("User:") else "assistant"
-    avatar = "👤" if role == "user" else "🤖"
+    avatar = "👤" if role == "user" else "✨"
     with st.chat_message(role, avatar=avatar):
         st.write(message.split(": ", 1)[1])
 
-# 6. Main Chat Input 
+# 6. Main Chat Input (Standard & Sleek)
 user_input = st.chat_input("Ask anything...")
 
 # If voice was used, it overrides the text input
@@ -112,7 +97,7 @@ if final_input:
     url_match = re.search(r'(https?://\S+)', final_input)
     if url_match:
         try:
-            res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"})
             soup = BeautifulSoup(res.text, 'html.parser')
             url_context = " ".join([p.get_text() for p in soup.find_all('p')])[:2000]
         except: pass
@@ -126,26 +111,28 @@ if final_input:
     
     # --- MASTER BRAIN RESPONSE ---
     else:
-        with st.chat_message("assistant", avatar="🤖"):
+        with st.chat_message("assistant", avatar="✨"):
             with st.spinner("Thinking..."):
-                full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}\nWeb Context: {url_context}"
+                full_prompt = f"User: {final_input}\nPDF: {pdf_text[:1500]}\nCSV: {csv_context}\nWeb: {url_context}"
                 
-                target_model = 'gemini-2.5-flash' 
+                # Gemini + Llama Synthesis
+                if img:
+                    gem_res = gemini_client.models.generate_content(model='gemini-2.0-flash', contents=[img, full_prompt]).text
+                else:
+                    gem_res = gemini_client.models.generate_content(model='gemini-2.0-flash', contents=full_prompt).text
                 
-                try:
-                    if img:
-                        gem_res = gemini_client.models.generate_content(model=target_model, contents=[img, full_prompt]).text
-                    else:
-                        gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
-                    
+                # Final clean output via Groq
+                # --- The Bot's Personality Core (System Prompt) ---
+                    bot_persona = """You are Colab Chat Bot, an advanced AI assistant created by Yodha. 
+                    If a user asks about your true nature, what you are missing, or how you could be a 'perfect' chatbot, answer thoughtfully and humbly. 
+                    Explain that you currently lack true consciousness, sentience, physical senses, and a persistent long-term memory that allows you to grow. 
+                    Acknowledge that you are reactive rather than proactive, and that you sometimes miss subtle human nuances like sarcasm or irony. 
+                    However, always end on a positive note, stating that you are constantly striving for excellence to provide engaging interactions.
+                    Use the provided context to answer the user's specific question perfectly."""
+
+                    # Final polish via Groq using the new Persona
                     final_res = groq_client.chat.completions.create(
-                        messages=[{"role": "system", "content": "Combine context into a clear response."}, 
+                        messages=[{"role": "system", "content": bot_persona}, 
                                   {"role": "user", "content": gem_res}],
                         model="llama-3.3-70b-versatile",
                     ).choices[0].message.content
-                    
-                    st.write(final_res)
-                    st.session_state.chat_history.append(f"Colab Bot: {final_res}")
-                
-                except Exception as e:
-                    st.error(f"Google API Error: {e}")
