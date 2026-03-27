@@ -1,0 +1,61 @@
+/* 1. Global Background & Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #050505 !important;
+    font-family: 'Inter', sans-serif;
+}
+
+/* 2. THE LOCKED SIDEBAR */
+[data-testid="stSidebar"] {
+    background-color: rgba(20, 20, 20, 0.9) !important;
+    backdrop-filter: blur(15px);
+    border-right: 1px solid rgba(0, 242, 254, 0.3) !important;
+    min-width: 320px !important; /* Forces it to stay visible */
+}
+
+/* 3. The Animated Gradient Title */
+.premium-title {
+    font-size: 4rem;
+    font-weight: 800;
+    text-align: center;
+    background: linear-gradient(to right, #00dbde 0%, #fc00ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -2px;
+    margin-bottom: 0px;
+    animation: gradient-shift 5s ease infinite alternate;
+}
+
+@keyframes gradient-shift {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(45deg); }
+}
+
+/* 4. Glass Chat Bubbles */
+[data-testid="stChatMessage"] {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-radius: 20px !important;
+    padding: 20px !important;
+}
+
+/* 5. The Upload Bar (+) */
+.upload-bar-container {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 10px;
+    margin-bottom: 15px;
+}
+
+/* 6. Glowing Bottom Input */
+.stChatInputContainer {
+    border-radius: 50px !important;
+    border: 1px solid rgba(0, 242, 254, 0.3) !important;
+    background: rgba(30, 30, 30, 0.9) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Hide Branding */
+header, footer {visibility: hidden;}
