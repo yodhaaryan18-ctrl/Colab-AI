@@ -109,34 +109,31 @@ if final_input:
             st.markdown(f'<img src="{url}" width="100%" style="border-radius: 15px;">', unsafe_allow_html=True)
             st.session_state.chat_history.append(f"Colab Bot: [Generated Image]")
     
-   # --- MASTER BRAIN RESPONSE ---
-else:
-    with st.chat_message("assistant", avatar="✨"):
-        with st.spinner("Thinking..."):
-            full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}\nWeb Context: {url_context}"
-            
-            # Using the most stable model name for the GENAI library
-            target_model = 'gemini-1.5-flash' 
-            
-            try:
-                if img:
-                    gem_res = gemini_client.models.generate_content(model=target_model, contents=[img, full_prompt]).text
-                else:
-                    gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
+    # --- MASTER BRAIN RESPONSE ---
+    else:
+        with st.chat_message("assistant", avatar="✨"):
+            with st.spinner("Thinking..."):
+                full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}\nWeb Context: {url_context}"
                 
-                # Final polish via Groq
-                final_res = groq_client.chat.completions.create(
-                    messages=[{"role": "system", "content": "Combine context into a clear response."}, 
-                              {"role": "user", "content": gem_res}],
-                    model="llama-3.3-70b-versatile",
-                ).choices[0].message.content
+                # Using the most stable model name for the GENAI library
+                target_model = 'gemini-1.5-flash' 
                 
-                st.write(final_res)
-                st.session_state.chat_history.append(f"Colab Bot: {final_res}")
-            except Exception as e:
-                st.error(f"Model Error: {e}")
-                st.info("Tip: Try changing the model name to 'models/gemini-1.5-flash' in the code.")
-                ).choices[0].message.content
+                try:
+                    if img:
+                        gem_res = gemini_client.models.generate_content(model=target_model, contents=[img, full_prompt]).text
+                    else:
+                        gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
+                    
+                    # Final polish via Groq
+                    final_res = groq_client.chat.completions.create(
+                        messages=[{"role": "system", "content": "Combine context into a clear response."}, 
+                                  {"role": "user", "content": gem_res}],
+                        model="llama-3.3-70b-versatile",
+                    ).choices[0].message.content
+                    
+                    st.write(final_res)
+                    st.session_state.chat_history.append(f"Colab Bot: {final_res}")
                 
-                st.write(final_res)
-                st.session_state.chat_history.append(f"Colab Bot: {final_res}")
+                except Exception as e:
+                    st.error(f"Model Error: {e}")
+                    st.info("Tip: Make sure your API keys are correct in the Streamlit Cloud Settings.")
