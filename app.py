@@ -120,18 +120,31 @@ if final_input:
     st.chat_message("user", avatar="👤").write(final_input)
     st.session_state.chat_history.append(f"User: {final_input}")
     
-    # --- Check for Links to Scrape ---
-    url_context = ""
-    url_match = re.search(r'(https?://\S+)', final_input)
-    if url_match:
+    with st.spinner("Agent routing request..."):
+        # 🧠 THE ROUTER AGENT: Decides which tool to use
+        router_prompt = f"""Analyze the user's input and decide the best tool to use.
+        Reply ONLY with one of these exactly matching words. Do not add any punctuation or extra text:
+        IMAGE (If they explicitly ask to draw, paint, or generate a picture)
+        SCRAPE (If they provide a web link like http/https and want it summarized or read)
+        CHAT (For literally everything else, including general questions, document reading, or chatting)
+        
+        User Input: {final_input}"""
+        
         try:
-            res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            url_context = " ".join([p.get_text() for p in soup.find_all('p')])[:2000]
-        except: pass
+            # We use Groq here because it is insanely fast for quick classifications
+            intent = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": router_prompt}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.1 # Low temperature so it doesn't get creative with the category names
+            ).choices[0].message.content.strip().upper()
+        except:
+            intent = "CHAT" # Fallback just in case
+            
+    # Show the user what the Agent decided (makes it look very professional)
+    st.caption(f"⚙️ *System: Request routed to {intent} Tool*")
 
-    # --- IMAGE GENERATION CHECK ---
-    if any(word in final_input.lower() for word in ["draw", "image", "picture", "paint"]):
+    # 🛠️ TOOL 1: THE ARTIST
+    if "IMAGE" in intent:
         with st.chat_message("assistant", avatar="🎨"):
             import urllib.parse
             clean_input = final_input.strip()
@@ -139,16 +152,47 @@ if final_input:
             url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
             st.markdown(f'<img src="{url}" width="100%" style="border-radius: 15px;">', unsafe_allow_html=True)
             
-            # Save Image generation to Cloud
+            # Save to Cloud
             supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
             supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]"}).execute()
-            st.session_state.chat_history.append(f"Colab Bot: [Generated Image]")
-    
-    # --- MASTER BRAIN RESPONSE ---
+            st.session_state.chat_history.append("Colab Bot: [Generated Image]")
+
+    # 🛠️ TOOL 2: THE RESEARCHER
+    elif "SCRAPE" in intent:
+        with st.chat_message("assistant", avatar="🔍"):
+            url_match = re.search(r'(https?://\S+)', final_input)
+            if url_match:
+                with st.spinner("Reading website..."):
+                    try:
+                        res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+                        soup = BeautifulSoup(res.text, 'html.parser')
+                        url_context = " ".join([p.get_text() for p in soup.find_all('p')])[:3000]
+                        
+                        # Pass the scraped text to the AI to summarize
+                        summary = groq_client.chat.completions.create(
+                            messages=[
+                                {"role": "system", "content": "You are a helpful assistant. Summarize the provided website content clearly."}, 
+                                {"role": "user", "content": f"User asked: {final_input}\n\nWebsite Content:\n{url_context}"}
+                            ],
+                            model="llama-3.3-70b-versatile",
+                        ).choices[0].message.content
+                        
+                        st.write(summary)
+                        
+                        # Save to Cloud
+                        supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
+                        supabase.table("messages").insert({"role": "assistant", "content": summary}).execute()
+                        st.session_state.chat_history.append(f"Colab Bot: {summary}")
+                    except Exception as e:
+                        st.error(f"Could not read the website. It might have a firewall. Error: {e}")
+            else:
+                st.warning("I couldn't find a valid link in your message.")
+
+    # 🛠️ TOOL 3: THE MASTER BRAIN
     else:
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
-                full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}\nWeb Context: {url_context}"
+                full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}"
                 target_model = 'gemini-2.5-flash' 
                 
                 try:
@@ -157,10 +201,10 @@ if final_input:
                     else:
                         gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
                     
-                    bot_persona = """You are Colab Chat Bot, an advanced AI assistant created by Yodha. 
-                    If a user asks about your true nature, answer thoughtfully and humbly. 
-                    Explain that you currently lack true consciousness, physical senses, and you sometimes miss subtle human nuances. 
-                    However, always end on a positive note. Use the provided context to answer perfectly."""
+                    bot_persona = """You are Colab Chat Bot, a highly conversational, warm, and friendly AI assistant created by Yodha. 
+                    When a user asks about your personal preferences, feelings, or true nature, respond exactly in this tone and style:
+                    "I'm glad you're excited to chat with me. However, I should clarify that I don't have personal preferences... I'm a complex software program... But despite these limitations, I'm constantly learning and improving. How can I assist you today?"
+                    For all other questions, maintain this same humble, human-like, and welcoming tone. Always use the provided context to answer perfectly."""
 
                     final_res = groq_client.chat.completions.create(
                         messages=[{"role": "system", "content": bot_persona}, 
@@ -170,15 +214,13 @@ if final_input:
                     
                     st.write(final_res)
                     
-                    # 🚀 SAVE CONVERSATION TO CLOUD DATABASE
                     supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": final_res}).execute()
-                    
                     st.session_state.chat_history.append(f"Colab Bot: {final_res}")
                 
                 except Exception as e:
                     error_msg = str(e)
                     if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                        st.warning("⏳ Wow, we are chatting too fast! Google's free tier needs a 1-minute cooldown. Please wait 60 seconds and try again.")
+                        st.warning("⏳ Google's free tier needs a 1-minute cooldown. Please wait 60 seconds.")
                     else:
                         st.error(f"Google API Error: {error_msg}")
