@@ -6,4 +6,3 @@ requests
 PyPDF2
 pandas
 beautifulsoup4
-streamlit-mic-recorder
