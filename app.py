@@ -67,6 +67,7 @@ with st.sidebar:
             pdf_reader = PyPDF2.PdfReader(uploaded_pdf)
             for page in pdf_reader.pages: 
                 pdf_text += page.extract_text() + "\n"
+            st.success("PDF Loaded successfully!")
         except Exception:
             st.warning("Could not read text from this PDF.")
         
@@ -76,6 +77,7 @@ with st.sidebar:
         try:
             df = pd.read_csv(uploaded_csv)
             csv_context = f"Data Summary:\n{df.head(10).to_markdown()}"
+            st.success("CSV Loaded successfully!")
         except Exception:
             st.warning("Could not read this CSV.")
 
@@ -83,10 +85,14 @@ with st.sidebar:
         st.session_state.chat_history = []
         st.rerun()
 
-# 5. Display History
+# 5. Welcome Message & History
+if len(st.session_state.chat_history) == 0:
+    with st.chat_message("assistant", avatar="🤖"):
+        st.markdown("### Welcome to the Studio! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
+
 for message in st.session_state.chat_history:
     role = "user" if message.startswith("User:") else "assistant"
-    avatar = "👤" if role == "user" else "✨"
+    avatar = "👤" if role == "user" else "🤖"
     with st.chat_message(role, avatar=avatar):
         st.write(message.split(": ", 1)[1])
 
@@ -120,11 +126,10 @@ if final_input:
     
     # --- MASTER BRAIN RESPONSE ---
     else:
-        with st.chat_message("assistant", avatar="✨"):
+        with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
                 full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}\nWeb Context: {url_context}"
                 
-                # FIX: Using the newest active Google standard model!
                 target_model = 'gemini-2.5-flash' 
                 
                 try:
@@ -133,7 +138,6 @@ if final_input:
                     else:
                         gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
                     
-                    # Final polish via Groq
                     final_res = groq_client.chat.completions.create(
                         messages=[{"role": "system", "content": "Combine context into a clear response."}, 
                                   {"role": "user", "content": gem_res}],
