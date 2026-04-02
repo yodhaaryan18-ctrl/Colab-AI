@@ -24,47 +24,66 @@ gemini_client = genai.Client(api_key=GEMINI_KEY)
 groq_client = Groq(api_key=GROQ_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- 🔐 2. THE LOGIN WALL ---
+# --- 🔐 2. THE PASSWORDLESS LOGIN WALL ---
 if "user" not in st.session_state:
     st.session_state.user = None
+if "auth_step" not in st.session_state:
+    st.session_state.auth_step = "email"
+if "auth_email" not in st.session_state:
+    st.session_state.auth_email = ""
 
-# If nobody is logged in, show the Login Page and STOP the app.
+# If nobody is logged in, show the Login Pages and STOP the app.
 if st.session_state.user is None:
     st.markdown("<h1 style='text-align: center;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Please log in to access your personal AI agent.</p>", unsafe_allow_html=True)
     
     with st.container(border=True):
-        email = st.text_input("Email Address")
-        password = st.text_input("Password", type="password")
-        
-        # --- FORGOT PASSWORD BUTTON ---
-        if st.button("Forgot Password?", type="tertiary"): 
-            if email:
-                try:
-                    supabase.auth.reset_password_for_email(email)
-                    st.success(f"Recovery email sent to {email}! Check your inbox to reset your password.")
-                except Exception as e:
-                    st.error("Error sending recovery email. Please try again.")
-            else:
-                st.warning("Please type your email address in the box above first so we know where to send the link!")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Log In", use_container_width=True):
-                try:
-                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                    st.session_state.user = response.user
-                    st.rerun() 
-                except Exception as e:
-                    st.error("Login failed. Please check your credentials.")
-        with col2:
-            if st.button("Sign Up", use_container_width=True):
-                try:
-                    response = supabase.auth.sign_up({"email": email, "password": password})
-                    st.success("Account created successfully! You can now log in.")
-                except Exception as e:
-                    st.error("Sign up failed. Password must be at least 6 characters.")
+        # PAGE 1: ENTER EMAIL
+        if st.session_state.auth_step == "email":
+            st.markdown("<h4 style='text-align: center;'>Step 1: What is your email?</h4>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: gray; font-size: 14px;'>We will send a secure 6-digit code to your inbox.</p>", unsafe_allow_html=True)
+            
+            email = st.text_input("Email Address", placeholder="name@gmail.com")
+            
+            if st.button("Send Verification Code", use_container_width=True, type="primary"):
+                if email:
+                    with st.spinner("Sending code..."):
+                        try:
+                            # Supabase automatically handles creating an account or logging them in!
+                            supabase.auth.sign_in_with_otp({"email": email})
+                            st.session_state.auth_email = email
+                            st.session_state.auth_step = "otp"
+                            st.rerun() 
+                        except Exception as e:
+                            st.error("Too many emails sent! Please wait a while or try a different email.")
+                else:
+                    st.warning("Please enter your email address first.")
                     
+        # PAGE 2: ENTER OTP CODE
+        elif st.session_state.auth_step == "otp":
+            st.markdown("<h4 style='text-align: center;'>Step 2: Enter your Code</h4>", unsafe_allow_html=True)
+            st.info(f"We sent a 6-digit code to **{st.session_state.auth_email}**")
+            
+            otp = st.text_input("Verification Code", type="password", placeholder="123456")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Verify & Log In", use_container_width=True, type="primary"):
+                    with st.spinner("Verifying..."):
+                        try:
+                            response = supabase.auth.verify_otp({
+                                "email": st.session_state.auth_email,
+                                "token": otp,
+                                "type": "email"
+                            })
+                            st.session_state.user = response.user
+                            st.rerun() 
+                        except Exception as e:
+                            st.error("Invalid or expired code. Please try again.")
+            with col2:
+                if st.button("⬅️ Back", use_container_width=True):
+                    st.session_state.auth_step = "email"
+                    st.rerun()
+
     # THIS IS CRITICAL: It stops the rest of the code from running until they log in.
     st.stop()
 
@@ -93,6 +112,7 @@ with st.sidebar:
     if st.button("🚪 Log Out", use_container_width=True):
         st.session_state.user = None
         st.session_state.chat_history = []
+        st.session_state.auth_step = "email" # Resets the login screen
         st.rerun()
         
     st.divider()
