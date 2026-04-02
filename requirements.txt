@@ -7,3 +7,4 @@ PyPDF2
 pandas
 beautifulsoup4
 supabase
+geopy
