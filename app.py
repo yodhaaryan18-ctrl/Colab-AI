@@ -1,4 +1,3 @@
-from geopy.geocoders import Nominatim
 import streamlit as st
 from google import genai
 from PIL import Image
@@ -9,8 +8,13 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import re
 from supabase import create_client, Client
+from geopy.geocoders import Nominatim
+import urllib.parse
 
-# 1. Connect to the AI Brains & Database
+# --- 0. Page Config (Must be first) ---
+st.set_page_config(page_title="Colab Chat Bot", page_icon="✨", layout="centered")
+
+# --- 1. Connect to the AI Brains & Database ---
 GEMINI_KEY = st.secrets["GEMINI_KEY"]
 GROQ_KEY = st.secrets["GROQ_KEY"]
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -20,21 +24,41 @@ gemini_client = genai.Client(api_key=GEMINI_KEY)
 groq_client = Groq(api_key=GROQ_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Initialize Memory from Cloud Database
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-    try:
-        # Fetch all past messages from Supabase, ordered by time
-        response = supabase.table("messages").select("*").order("id").execute()
-        for row in response.data:
-            prefix = "User: " if row["role"] == "user" else "Colab Bot: "
-            st.session_state.chat_history.append(f"{prefix}{row['content']}")
-    except Exception as e:
-        st.warning(f"Could not load cloud memory: {e}")
+# --- 🔐 2. THE LOGIN WALL ---
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-# 3. Page Setup & Premium Dark Theme CSS
-st.set_page_config(page_title="Colab Chat Bot", page_icon="✨", layout="centered")
+# If nobody is logged in, show the Login Page and STOP the app.
+if st.session_state.user is None:
+    st.markdown("<h1 style='text-align: center;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>Please log in to access your personal AI agent.</p>", unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        email = st.text_input("Email Address")
+        password = st.text_input("Password", type="password")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Log In", use_container_width=True):
+                try:
+                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                    st.session_state.user = response.user
+                    st.rerun() # Refresh the page to let them in!
+                except Exception as e:
+                    st.error("Login failed. Please check your credentials.")
+        with col2:
+            if st.button("Sign Up", use_container_width=True):
+                try:
+                    response = supabase.auth.sign_up({"email": email, "password": password})
+                    st.success("Account created successfully! You can now log in.")
+                except Exception as e:
+                    st.error("Sign up failed. Password must be at least 6 characters.")
+                    
+    # THIS IS CRITICAL: It stops the rest of the code from running until they log in.
+    st.stop()
 
+
+# --- 3. Premium Dark Theme CSS ---
 custom_css = """
 <style>
     .stApp { background-color: #121212; color: #E0E0E0; }
@@ -49,11 +73,20 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown('<h1 class="premium-title">Tan Chat Bot</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="premium-title">Colab Chat Bot</h1>', unsafe_allow_html=True)
 
-# 4. Sidebar: The "Command Center"
+# --- 4. Sidebar: The "Command Center" ---
 voice_input_text = ""
 with st.sidebar:
+    # User Profile & Logout
+    st.write(f"👤 **Account:**\n{st.session_state.user.email}")
+    if st.button("🚪 Log Out", use_container_width=True):
+        st.session_state.user = None
+        st.session_state.chat_history = []
+        st.rerun()
+        
+    st.divider()
+    
     st.header("🎙️ Voice Studio")
     audio_data = st.audio_input("Speak to the bot")
     if audio_data:
@@ -94,16 +127,28 @@ with st.sidebar:
         except Exception:
             st.warning("Could not read this CSV.")
 
-    if st.button("🗑️ Clear Cloud Memory"):
-        # Danger zone: This deletes the database rows!
-        supabase.table("messages").delete().neq("id", 0).execute() 
+    if st.button("🗑️ Clear My Memory"):
+        # Now it only deletes messages belonging to the logged-in user!
+        supabase.table("messages").delete().eq("user_email", st.session_state.user.email).execute() 
         st.session_state.chat_history = []
         st.rerun()
 
-# 5. Welcome Message & History
+# --- 5. Initialize PRIVATE Cloud Memory ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+    try:
+        # Fetch ONLY the messages that belong to the logged-in user!
+        response = supabase.table("messages").select("*").eq("user_email", st.session_state.user.email).order("id").execute()
+        for row in response.data:
+            prefix = "User: " if row["role"] == "user" else "Colab Bot: "
+            st.session_state.chat_history.append(f"{prefix}{row['content']}")
+    except Exception as e:
+        st.warning(f"Could not load cloud memory: {e}")
+
+# --- 6. Welcome Message & History Display ---
 if len(st.session_state.chat_history) == 0:
     with st.chat_message("assistant", avatar="🤖"):
-        st.markdown("### Welcome to the Studio! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
+        st.markdown(f"### Welcome, {st.session_state.user.email.split('@')[0]}! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
 
 for message in st.session_state.chat_history:
     role = "user" if message.startswith("User:") else "assistant"
@@ -111,18 +156,16 @@ for message in st.session_state.chat_history:
     with st.chat_message(role, avatar=avatar):
         st.write(message.split(": ", 1)[1])
 
-# 6. Main Chat Input 
+# --- 7. Main Chat Input ---
 user_input = st.chat_input("Ask anything...")
-
 final_input = voice_input_text if voice_input_text else user_input
 
-# 7. Processing Logic
+# --- 8. Processing Logic & Routing ---
 if final_input:
     st.chat_message("user", avatar="👤").write(final_input)
     st.session_state.chat_history.append(f"User: {final_input}")
     
     with st.spinner("Agent routing request..."):
-        # 🧠 UPDATED ROUTER: Now includes Maps!
         router_prompt = f"""Analyze the user's input and decide the best tool to use.
         Reply ONLY with one of these exactly matching words:
         IMAGE (If they want you to create or generate a picture)
@@ -147,14 +190,13 @@ if final_input:
     if "IMAGE" in intent:
         with st.chat_message("assistant", avatar="🎨"):
             with st.spinner("Painting your image..."):
-                import urllib.parse
                 clean_input = final_input.strip()
                 encoded_prompt = urllib.parse.quote(clean_input)
                 url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
                 try:
                     st.image(url, caption=f"Generated: {clean_input}")
-                    supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
-                    supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]"}).execute()
+                    supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
+                    supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]", "user_email": st.session_state.user.email}).execute()
                     st.session_state.chat_history.append("Colab Bot: [Generated Image]")
                 except Exception:
                     st.error("Image server overloaded.")
@@ -177,38 +219,35 @@ if final_input:
                             model="llama-3.3-70b-versatile",
                         ).choices[0].message.content
                         st.write(summary)
-                        supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
-                        supabase.table("messages").insert({"role": "assistant", "content": summary}).execute()
+                        supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
+                        supabase.table("messages").insert({"role": "assistant", "content": summary, "user_email": st.session_state.user.email}).execute()
                         st.session_state.chat_history.append(f"Colab Bot: {summary}")
                     except Exception as e:
                         st.error(f"Could not read website: {e}")
             else:
                 st.warning("No valid link found.")
 
-    # 🛠️ TOOL 3: THE NAVIGATOR (NEW!)
+    # 🛠️ TOOL 3: THE NAVIGATOR 
     elif "MAP" in intent:
         with st.chat_message("assistant", avatar="🗺️"):
             with st.spinner("Locating coordinates..."):
                 try:
-                    # 1. Ask the AI to extract JUST the location name from the prompt
                     location_name = groq_client.chat.completions.create(
                         messages=[{"role": "user", "content": f"Extract ONLY the city, country, or location name from this text: '{final_input}'. Return only the name."}],
                         model="llama-3.3-70b-versatile",
                         temperature=0.1
                     ).choices[0].message.content.strip()
                     
-                    # 2. Get the GPS coordinates
                     geolocator = Nominatim(user_agent="colab_bot_agent")
                     location = geolocator.geocode(location_name)
                     
                     if location:
                         st.write(f"Dropping a pin at **{location.address}**")
-                        # 3. Streamlit needs the GPS data in a DataFrame
                         map_data = pd.DataFrame({'lat': [location.latitude], 'lon': [location.longitude]})
-                        st.map(map_data, zoom=12) # Streamlit's built-in interactive map!
+                        st.map(map_data, zoom=12) 
                         
-                        supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
-                        supabase.table("messages").insert({"role": "assistant", "content": f"[Map of {location_name}]"}).execute()
+                        supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
+                        supabase.table("messages").insert({"role": "assistant", "content": f"[Map of {location_name}]", "user_email": st.session_state.user.email}).execute()
                         st.session_state.chat_history.append(f"Colab Bot: [Map of {location_name}]")
                     else:
                         st.warning("I couldn't find that specific location on the globe.")
@@ -239,8 +278,8 @@ if final_input:
                     ).choices[0].message.content
                     
                     st.write(final_res)
-                    supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
-                    supabase.table("messages").insert({"role": "assistant", "content": final_res}).execute()
+                    supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
+                    supabase.table("messages").insert({"role": "assistant", "content": final_res, "user_email": st.session_state.user.email}).execute()
                     st.session_state.chat_history.append(f"Colab Bot: {final_res}")
                 
                 except Exception as e:
