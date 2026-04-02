@@ -29,7 +29,6 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 # If nobody is logged in, show the Login Page and STOP the app.
-# If nobody is logged in, show the Login Page and STOP the app.
 if st.session_state.user is None:
     st.markdown("<h1 style='text-align: center;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: gray;'>Please log in to access your personal AI agent.</p>", unsafe_allow_html=True)
@@ -38,7 +37,7 @@ if st.session_state.user is None:
         email = st.text_input("Email Address")
         password = st.text_input("Password", type="password")
         
-        # --- 🆕 FORGOT PASSWORD BUTTON ---
+        # --- FORGOT PASSWORD BUTTON ---
         if st.button("Forgot Password?", type="tertiary"): 
             if email:
                 try:
@@ -48,7 +47,6 @@ if st.session_state.user is None:
                     st.error("Error sending recovery email. Please try again.")
             else:
                 st.warning("Please type your email address in the box above first so we know where to send the link!")
-        # ---------------------------------
         
         col1, col2 = st.columns(2)
         with col1:
@@ -57,55 +55,6 @@ if st.session_state.user is None:
                     response = supabase.auth.sign_in_with_password({"email": email, "password": password})
                     st.session_state.user = response.user
                     st.rerun() 
-                except Exception as e:
-                    st.error("Login failed. Please check your credentials.")
-        with col2:
-            if st.button("Sign Up", use_container_width=True):
-                try:
-                    response = supabase.auth.sign_up({"email": email, "password": password})
-                    st.success("Account created successfully! You can now log in.")
-                except Exception as e:
-                    st.error("Sign up failed. Password must be at least 6 characters.")
-                    
-    # THIS IS CRITICAL: It stops the rest of the code from running until they log in.
-    st.stop()
-        
-        # --- 🆕 FORGOT PASSWORD BUTTON ---
-        if st.button("Forgot Password?", type="tertiary"): 
-            if email:
-                try:
-                    supabase.auth.reset_password_for_email(email)
-                    st.success(f"Recovery email sent to {email}! Check your inbox to reset your Colab AI password.")
-                except Exception as e:
-                    st.error("Error sending recovery email. Please try again.")
-            else:
-                st.warning("Please type your email address in the box above first so we know where to send the link!")
-        # ---------------------------------
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Log In", use_container_width=True):
-                try:
-                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                    st.session_state.user = response.user
-                    st.rerun() 
-                except Exception as e:
-                    st.error("Login failed. Please check your credentials.")
-        with col2:
-            if st.button("Sign Up", use_container_width=True):
-                try:
-                    response = supabase.auth.sign_up({"email": email, "password": password})
-                    st.success("Account created successfully! You can now log in.")
-                except Exception as e:
-                    st.error("Sign up failed. Password must be at least 6 characters.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Log In", use_container_width=True):
-                try:
-                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                    st.session_state.user = response.user
-                    st.rerun() # Refresh the page to let them in!
                 except Exception as e:
                     st.error("Login failed. Please check your credentials.")
         with col2:
@@ -140,7 +89,6 @@ st.markdown('<h1 class="premium-title">Colab Chat Bot</h1>', unsafe_allow_html=T
 # --- 4. Sidebar: The "Command Center" ---
 voice_input_text = ""
 with st.sidebar:
-    # User Profile & Logout
     st.write(f"👤 **Account:**\n{st.session_state.user.email}")
     if st.button("🚪 Log Out", use_container_width=True):
         st.session_state.user = None
@@ -190,7 +138,6 @@ with st.sidebar:
             st.warning("Could not read this CSV.")
 
     if st.button("🗑️ Clear My Memory"):
-        # Now it only deletes messages belonging to the logged-in user!
         supabase.table("messages").delete().eq("user_email", st.session_state.user.email).execute() 
         st.session_state.chat_history = []
         st.rerun()
@@ -199,7 +146,6 @@ with st.sidebar:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
     try:
-        # Fetch ONLY the messages that belong to the logged-in user!
         response = supabase.table("messages").select("*").eq("user_email", st.session_state.user.email).order("id").execute()
         for row in response.data:
             prefix = "User: " if row["role"] == "user" else "Colab Bot: "
@@ -248,7 +194,6 @@ if final_input:
             
     st.caption(f"⚙️ *System: Request routed to {intent} Tool*")
 
-    # 🛠️ TOOL 1: THE ARTIST 
     if "IMAGE" in intent:
         with st.chat_message("assistant", avatar="🎨"):
             with st.spinner("Painting your image..."):
@@ -263,7 +208,6 @@ if final_input:
                 except Exception:
                     st.error("Image server overloaded.")
 
-    # 🛠️ TOOL 2: THE RESEARCHER 
     elif "SCRAPE" in intent:
         with st.chat_message("assistant", avatar="🔍"):
             url_match = re.search(r'(https?://\S+)', final_input)
@@ -289,7 +233,6 @@ if final_input:
             else:
                 st.warning("No valid link found.")
 
-    # 🛠️ TOOL 3: THE NAVIGATOR 
     elif "MAP" in intent:
         with st.chat_message("assistant", avatar="🗺️"):
             with st.spinner("Locating coordinates..."):
@@ -316,7 +259,6 @@ if final_input:
                 except Exception as e:
                     st.error(f"Navigation error: {e}")
 
-    # 🛠️ TOOL 4: THE MASTER BRAIN 
     else:
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
