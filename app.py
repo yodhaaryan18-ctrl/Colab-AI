@@ -1,3 +1,4 @@
+from geopy.geocoders import Nominatim
 import streamlit as st
 from google import genai
 from PIL import Image
@@ -121,43 +122,44 @@ if final_input:
     st.session_state.chat_history.append(f"User: {final_input}")
     
     with st.spinner("Agent routing request..."):
-        # 🧠 THE ROUTER AGENT: Decides which tool to use
+        # 🧠 UPDATED ROUTER: Now includes Maps!
         router_prompt = f"""Analyze the user's input and decide the best tool to use.
-        Reply ONLY with one of these exactly matching words. Do not add any punctuation or extra text:
-        IMAGE (If they explicitly ask to draw, paint, or generate a picture)
-        SCRAPE (If they provide a web link like http/https and want it summarized or read)
-        CHAT (For literally everything else, including general questions, document reading, or chatting)
+        Reply ONLY with one of these exactly matching words:
+        IMAGE (If they want you to create or generate a picture)
+        SCRAPE (If they provide a web link to summarize)
+        MAP (If they ask to see a map, locate a city, or find a place)
+        CHAT (For everything else)
         
         User Input: {final_input}"""
         
         try:
-            # We use Groq here because it is insanely fast for quick classifications
             intent = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": router_prompt}],
                 model="llama-3.3-70b-versatile",
-                temperature=0.1 # Low temperature so it doesn't get creative with the category names
+                temperature=0.1 
             ).choices[0].message.content.strip().upper()
         except:
-            intent = "CHAT" # Fallback just in case
+            intent = "CHAT"
             
-    # Show the user what the Agent decided (makes it look very professional)
     st.caption(f"⚙️ *System: Request routed to {intent} Tool*")
 
-    # 🛠️ TOOL 1: THE ARTIST
+    # 🛠️ TOOL 1: THE ARTIST 
     if "IMAGE" in intent:
         with st.chat_message("assistant", avatar="🎨"):
-            import urllib.parse
-            clean_input = final_input.strip()
-            encoded_prompt = urllib.parse.quote(clean_input)
-            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
-            st.markdown(f'<img src="{url}" width="100%" style="border-radius: 15px;">', unsafe_allow_html=True)
-            
-            # Save to Cloud
-            supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
-            supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]"}).execute()
-            st.session_state.chat_history.append("Colab Bot: [Generated Image]")
+            with st.spinner("Painting your image..."):
+                import urllib.parse
+                clean_input = final_input.strip()
+                encoded_prompt = urllib.parse.quote(clean_input)
+                url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
+                try:
+                    st.image(url, caption=f"Generated: {clean_input}")
+                    supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
+                    supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]"}).execute()
+                    st.session_state.chat_history.append("Colab Bot: [Generated Image]")
+                except Exception:
+                    st.error("Image server overloaded.")
 
-    # 🛠️ TOOL 2: THE RESEARCHER
+    # 🛠️ TOOL 2: THE RESEARCHER 
     elif "SCRAPE" in intent:
         with st.chat_message("assistant", avatar="🔍"):
             url_match = re.search(r'(https?://\S+)', final_input)
@@ -167,34 +169,58 @@ if final_input:
                         res = requests.get(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
                         soup = BeautifulSoup(res.text, 'html.parser')
                         url_context = " ".join([p.get_text() for p in soup.find_all('p')])[:3000]
-                        
-                        # Pass the scraped text to the AI to summarize
                         summary = groq_client.chat.completions.create(
                             messages=[
-                                {"role": "system", "content": "You are a helpful assistant. Summarize the provided website content clearly."}, 
+                                {"role": "system", "content": "Summarize the provided website content clearly."}, 
                                 {"role": "user", "content": f"User asked: {final_input}\n\nWebsite Content:\n{url_context}"}
                             ],
                             model="llama-3.3-70b-versatile",
                         ).choices[0].message.content
-                        
                         st.write(summary)
-                        
-                        # Save to Cloud
                         supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
                         supabase.table("messages").insert({"role": "assistant", "content": summary}).execute()
                         st.session_state.chat_history.append(f"Colab Bot: {summary}")
                     except Exception as e:
-                        st.error(f"Could not read the website. It might have a firewall. Error: {e}")
+                        st.error(f"Could not read website: {e}")
             else:
-                st.warning("I couldn't find a valid link in your message.")
+                st.warning("No valid link found.")
 
-    # 🛠️ TOOL 3: THE MASTER BRAIN
+    # 🛠️ TOOL 3: THE NAVIGATOR (NEW!)
+    elif "MAP" in intent:
+        with st.chat_message("assistant", avatar="🗺️"):
+            with st.spinner("Locating coordinates..."):
+                try:
+                    # 1. Ask the AI to extract JUST the location name from the prompt
+                    location_name = groq_client.chat.completions.create(
+                        messages=[{"role": "user", "content": f"Extract ONLY the city, country, or location name from this text: '{final_input}'. Return only the name."}],
+                        model="llama-3.3-70b-versatile",
+                        temperature=0.1
+                    ).choices[0].message.content.strip()
+                    
+                    # 2. Get the GPS coordinates
+                    geolocator = Nominatim(user_agent="colab_bot_agent")
+                    location = geolocator.geocode(location_name)
+                    
+                    if location:
+                        st.write(f"Dropping a pin at **{location.address}**")
+                        # 3. Streamlit needs the GPS data in a DataFrame
+                        map_data = pd.DataFrame({'lat': [location.latitude], 'lon': [location.longitude]})
+                        st.map(map_data, zoom=12) # Streamlit's built-in interactive map!
+                        
+                        supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
+                        supabase.table("messages").insert({"role": "assistant", "content": f"[Map of {location_name}]"}).execute()
+                        st.session_state.chat_history.append(f"Colab Bot: [Map of {location_name}]")
+                    else:
+                        st.warning("I couldn't find that specific location on the globe.")
+                except Exception as e:
+                    st.error(f"Navigation error: {e}")
+
+    # 🛠️ TOOL 4: THE MASTER BRAIN 
     else:
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
                 full_prompt = f"User Question: {final_input}\nContext from PDF: {pdf_text[:1500]}\nCSV Context: {csv_context}"
                 target_model = 'gemini-2.5-flash' 
-                
                 try:
                     if img:
                         gem_res = gemini_client.models.generate_content(model=target_model, contents=[img, full_prompt]).text
@@ -204,7 +230,7 @@ if final_input:
                     bot_persona = """You are Colab Chat Bot, a highly conversational, warm, and friendly AI assistant created by Yodha. 
                     When a user asks about your personal preferences, feelings, or true nature, respond exactly in this tone and style:
                     "I'm glad you're excited to chat with me. However, I should clarify that I don't have personal preferences... I'm a complex software program... But despite these limitations, I'm constantly learning and improving. How can I assist you today?"
-                    For all other questions, maintain this same humble, human-like, and welcoming tone. Always use the provided context to answer perfectly."""
+                    For all other questions, maintain this same humble, human-like, and welcoming tone."""
 
                     final_res = groq_client.chat.completions.create(
                         messages=[{"role": "system", "content": bot_persona}, 
@@ -213,7 +239,6 @@ if final_input:
                     ).choices[0].message.content
                     
                     st.write(final_res)
-                    
                     supabase.table("messages").insert({"role": "user", "content": final_input}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": final_res}).execute()
                     st.session_state.chat_history.append(f"Colab Bot: {final_res}")
