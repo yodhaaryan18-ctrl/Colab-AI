@@ -58,12 +58,22 @@ if st.session_state.user is None:
                 else:
                     st.warning("Please enter your email address first.")
                     
-        # PAGE 2: ENTER OTP CODE
+       # PAGE 2: ENTER OTP CODE
         elif st.session_state.auth_step == "otp":
             st.markdown("<h4 style='text-align: center;'>Step 2: Enter your Code</h4>", unsafe_allow_html=True)
             st.info(f"We sent a 6-digit code to **{st.session_state.auth_email}**")
             
             otp = st.text_input("Verification Code", type="password", placeholder="123456")
+            
+            # --- 🆕 RESEND CODE BUTTON ---
+            if st.button("Didn't receive a code? Resend", type="tertiary"):
+                with st.spinner("Resending code..."):
+                    try:
+                        supabase.auth.sign_in_with_otp({"email": st.session_state.auth_email})
+                        st.success("A new code is on its way! (Don't forget to check your spam folder).")
+                    except Exception as e:
+                        st.error("Rate limit reached. Please wait a few minutes before requesting another code.")
+            # -----------------------------
             
             col1, col2 = st.columns(2)
             with col1:
@@ -83,10 +93,6 @@ if st.session_state.user is None:
                 if st.button("⬅️ Back", use_container_width=True):
                     st.session_state.auth_step = "email"
                     st.rerun()
-
-    # THIS IS CRITICAL: It stops the rest of the code from running until they log in.
-    st.stop()
-
 
 # --- 3. Premium Dark Theme CSS ---
 custom_css = """
