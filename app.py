@@ -202,11 +202,11 @@ if final_input:
     
     with st.spinner("Agent routing request..."):
         router_prompt = f"""Analyze the user's input and decide the best tool to use.
-        Reply ONLY with one of these exactly matching words:
-        IMAGE (If they want you to create or generate a picture)
-        SCRAPE (If they provide a web link to summarize)
+        Reply ONLY with one of these exactly matching words. Do not add any punctuation or extra text:
+        IMAGE (ONLY if the user explicitly wants you to create, generate, or output a visual picture right now. e.g., "generate a picture of a cat" or "draw a sunset")
+        SCRAPE (If they provide a web link like http/https and want it summarized or read)
         MAP (If they ask to see a map, locate a city, or find a place)
-        CHAT (For everything else)
+        CHAT (For literally everything else, including asking HOW to draw something, general questions, complex document reading, or chatting)
         
         User Input: {final_input}"""
         
@@ -228,12 +228,14 @@ if final_input:
                 encoded_prompt = urllib.parse.quote(clean_input)
                 url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
                 try:
+                    # Patiently waits for the image to finish loading
                     st.image(url, caption=f"Generated: {clean_input}")
+                    
                     supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]", "user_email": st.session_state.user.email}).execute()
                     st.session_state.chat_history.append("Colab Bot: [Generated Image]")
                 except Exception:
-                    st.error("Image server overloaded.")
+                    st.error("The image generation server is currently overloaded. Please wait a moment and try again!")
 
     elif "SCRAPE" in intent:
         with st.chat_message("assistant", avatar="🔍"):
@@ -252,6 +254,7 @@ if final_input:
                             model="llama-3.3-70b-versatile",
                         ).choices[0].message.content
                         st.write(summary)
+                        
                         supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                         supabase.table("messages").insert({"role": "assistant", "content": summary, "user_email": st.session_state.user.email}).execute()
                         st.session_state.chat_history.append(f"Colab Bot: {summary}")
@@ -309,6 +312,7 @@ if final_input:
                     ).choices[0].message.content
                     
                     st.write(final_res)
+                    
                     supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": final_res, "user_email": st.session_state.user.email}).execute()
                     st.session_state.chat_history.append(f"Colab Bot: {final_res}")
