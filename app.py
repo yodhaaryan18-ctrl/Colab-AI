@@ -10,11 +10,12 @@ import re
 from supabase import create_client, Client
 from geopy.geocoders import Nominatim
 import urllib.parse
+from streamlit_cookies_controller import CookieController
 
 # --- 0. Page Config (Must be first) ---
 st.set_page_config(page_title="Colab Chat Bot", page_icon="✨", layout="centered")
 
-# --- 1. Connect to the AI Brains & Database ---
+# --- 1. Connect to the AI Brains, Database, and Cookies ---
 GEMINI_KEY = st.secrets["GEMINI_KEY"]
 GROQ_KEY = st.secrets["GROQ_KEY"]
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -23,16 +24,30 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 groq_client = Groq(api_key=GROQ_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+cookie_controller = CookieController()
 
-# --- 🔐 2. THE PASSWORDLESS LOGIN WALL ---
+# --- 🔐 2. THE PASSWORDLESS LOGIN WALL (With Cookies!) ---
 if "user" not in st.session_state:
     st.session_state.user = None
+    
+    # 🍪 SILENT LOGIN: Check the browser for a saved "Remember Me" cookie
+    saved_access = cookie_controller.get("colab_access")
+    saved_refresh = cookie_controller.get("colab_refresh")
+    
+    if saved_access and saved_refresh:
+        try:
+            # If cookies exist, log them in silently in the background!
+            response = supabase.auth.set_session(saved_access, saved_refresh)
+            st.session_state.user = response.user
+        except Exception:
+            pass # If the cookie is expired or broken, just quietly fail and show the login screen
+
 if "auth_step" not in st.session_state:
     st.session_state.auth_step = "email"
 if "auth_email" not in st.session_state:
     st.session_state.auth_email = ""
 
-# If nobody is logged in, show the Login Pages and STOP the app.
+# If nobody is logged in (and no cookies were found), show the Login Pages
 if st.session_state.user is None:
     st.markdown("<h1 style='text-align: center;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
     
@@ -64,6 +79,9 @@ if st.session_state.user is None:
             
             otp = st.text_input("Verification Code", type="password", placeholder="123456")
             
+            # 🆕 THE REMEMBER ME CHECKBOX
+            remember_me = st.checkbox("Remember me on this device", value=True)
+            
             if st.button("Didn't receive a code? Resend", type="tertiary"):
                 with st.spinner("Resending code..."):
                     try:
@@ -83,6 +101,13 @@ if st.session_state.user is None:
                                 "type": "email"
                             })
                             st.session_state.user = response.user
+                            
+                            # 🍪 Save the secure tokens to the browser if they checked the box!
+                            if remember_me:
+                                # Saves for 30 days (2,592,000 seconds)
+                                cookie_controller.set("colab_access", response.session.access_token, max_age=2592000)
+                                cookie_controller.set("colab_refresh", response.session.refresh_token, max_age=2592000)
+                                
                             st.rerun() 
                         except Exception as e:
                             st.error("Invalid or expired code. Please try again.")
@@ -116,7 +141,11 @@ st.markdown('<h1 class="premium-title">Colab Chat Bot</h1>', unsafe_allow_html=T
 voice_input_text = ""
 with st.sidebar:
     st.write(f"👤 **Account:**\n{st.session_state.user.email}")
+    
+    # 🆕 UPDATED LOGOUT: Now deletes the cookies so they don't auto-login next time!
     if st.button("🚪 Log Out", use_container_width=True):
+        cookie_controller.remove("colab_access")
+        cookie_controller.remove("colab_refresh")
         st.session_state.user = None
         st.session_state.chat_history = []
         st.session_state.auth_step = "email"
@@ -228,9 +257,7 @@ if final_input:
                 encoded_prompt = urllib.parse.quote(clean_input)
                 url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
                 try:
-                    # Patiently waits for the image to finish loading
                     st.image(url, caption=f"Generated: {clean_input}")
-                    
                     supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]", "user_email": st.session_state.user.email}).execute()
                     st.session_state.chat_history.append("Colab Bot: [Generated Image]")
