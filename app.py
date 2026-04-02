@@ -48,7 +48,7 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown('<h1 class="premium-title">Colab Chat Bot</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="premium-title">Tan Chat Bot</h1>', unsafe_allow_html=True)
 
 # 4. Sidebar: The "Command Center"
 voice_input_text = ""
