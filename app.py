@@ -26,7 +26,7 @@ groq_client = Groq(api_key=GROQ_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 cookie_controller = CookieController()
 
-# --- 🔐 2. THE PASSWORDLESS LOGIN WALL (With Cookies!) ---
+# --- 🔐 2. THE PROFESSIONAL LOGIN FLOW ---
 if "user" not in st.session_state:
     st.session_state.user = None
     
@@ -36,87 +36,115 @@ if "user" not in st.session_state:
     
     if saved_access and saved_refresh:
         try:
-            # If cookies exist, log them in silently in the background!
             response = supabase.auth.set_session(saved_access, saved_refresh)
             st.session_state.user = response.user
         except Exception:
-            pass # If the cookie is expired or broken, just quietly fail and show the login screen
+            pass 
 
+# Set up the page state (landing, login, or signup)
 if "auth_step" not in st.session_state:
-    st.session_state.auth_step = "email"
-if "auth_email" not in st.session_state:
-    st.session_state.auth_email = ""
+    st.session_state.auth_step = "landing"
 
-# If nobody is logged in (and no cookies were found), show the Login Pages
+# If nobody is logged in, show the Authentication Flow
 if st.session_state.user is None:
-    st.markdown("<h1 style='text-align: center;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
+    # Adding a bit of extra spacing at the top for a premium look
+    st.write("<br><br>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; font-size: 3.5rem;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray; margin-bottom: 30px;'>Your intelligent, autonomous workspace.</p>", unsafe_allow_html=True)
     
     with st.container(border=True):
-        # PAGE 1: ENTER EMAIL
-        if st.session_state.auth_step == "email":
-            st.markdown("<h4 style='text-align: center;'>Step 1: What is your email?</h4>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align: center; color: gray; font-size: 14px;'>We will send a secure 6-digit code to your inbox.</p>", unsafe_allow_html=True)
-            
-            email = st.text_input("Email Address", placeholder="name@gmail.com")
-            
-            if st.button("Send Verification Code", use_container_width=True, type="primary"):
-                if email:
-                    with st.spinner("Sending code..."):
-                        try:
-                            supabase.auth.sign_in_with_otp({"email": email})
-                            st.session_state.auth_email = email
-                            st.session_state.auth_step = "otp"
-                            st.rerun() 
-                        except Exception as e:
-                            st.error("Too many emails sent! Please wait a while or try a different email.")
-                else:
-                    st.warning("Please enter your email address first.")
-                    
-        # PAGE 2: ENTER OTP CODE
-        elif st.session_state.auth_step == "otp":
-            st.markdown("<h4 style='text-align: center;'>Step 2: Enter your Code</h4>", unsafe_allow_html=True)
-            st.info(f"We sent a 6-digit code to **{st.session_state.auth_email}**")
-            
-            otp = st.text_input("Verification Code", type="password", placeholder="123456")
-            
-            # 🆕 THE REMEMBER ME CHECKBOX
-            remember_me = st.checkbox("Remember me on this device", value=True)
-            
-            if st.button("Didn't receive a code? Resend", type="tertiary"):
-                with st.spinner("Resending code..."):
-                    try:
-                        supabase.auth.sign_in_with_otp({"email": st.session_state.auth_email})
-                        st.success("A new code is on its way! (Don't forget to check your spam folder).")
-                    except Exception as e:
-                        st.error("Rate limit reached. Please wait a few minutes before requesting another code.")
+        
+        # --- PAGE 1: THE LANDING MENU ---
+        if st.session_state.auth_step == "landing":
+            st.markdown("<h3 style='text-align: center; margin-bottom: 20px;'>Welcome</h3>", unsafe_allow_html=True)
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Verify & Log In", use_container_width=True, type="primary"):
-                    with st.spinner("Verifying..."):
+                if st.button("🔑 Log In", use_container_width=True, type="primary"):
+                    st.session_state.auth_step = "login"
+                    st.rerun()
+            with col2:
+                if st.button("✨ Sign Up", use_container_width=True):
+                    st.session_state.auth_step = "signup"
+                    st.rerun()
+                    
+        # --- PAGE 2: LOG IN ---
+        elif st.session_state.auth_step == "login":
+            st.markdown("<h3 style='text-align: center;'>Log In</h3>", unsafe_allow_html=True)
+            
+            email = st.text_input("Email Address")
+            password = st.text_input("Password", type="password")
+            
+            # Forgot Password Button
+            if st.button("Forgot Password?", type="tertiary"):
+                if email:
+                    with st.spinner("Sending recovery email..."):
                         try:
-                            response = supabase.auth.verify_otp({
-                                "email": st.session_state.auth_email,
-                                "token": otp,
-                                "type": "email"
-                            })
-                            st.session_state.user = response.user
-                            
-                            # 🍪 Save the secure tokens to the browser if they checked the box!
-                            if remember_me:
-                                # Saves for 30 days (2,592,000 seconds)
-                                cookie_controller.set("colab_access", response.session.access_token, max_age=2592000)
-                                cookie_controller.set("colab_refresh", response.session.refresh_token, max_age=2592000)
-                                
-                            st.rerun() 
+                            supabase.auth.reset_password_for_email(email)
+                            st.success(f"Recovery link sent to {email}!")
                         except Exception as e:
-                            st.error("Invalid or expired code. Please try again.")
+                            st.error("Could not send email. Please check your address.")
+                else:
+                    st.warning("Please type your email address in the box first!")
+            
+            st.write("") # Spacer
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Submit", use_container_width=True, type="primary"):
+                    with st.spinner("Logging in..."):
+                        try:
+                            response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                            st.session_state.user = response.user
+                            # Set cookies to remember them for 30 days
+                            cookie_controller.set("colab_access", response.session.access_token, max_age=2592000)
+                            cookie_controller.set("colab_refresh", response.session.refresh_token, max_age=2592000)
+                            st.rerun()
+                        except Exception as e:
+                            st.error("Login failed. Check your email and password.")
             with col2:
                 if st.button("⬅️ Back", use_container_width=True):
-                    st.session_state.auth_step = "email"
+                    st.session_state.auth_step = "landing"
                     st.rerun()
 
-    # THIS IS CRITICAL: It stops the rest of the code from running until they log in.
+        # --- PAGE 3: SIGN UP ---
+        elif st.session_state.auth_step == "signup":
+            st.markdown("<h3 style='text-align: center;'>Create Account</h3>", unsafe_allow_html=True)
+            
+            username = st.text_input("User Name (What should we call you?)")
+            email = st.text_input("Email Address")
+            password = st.text_input("Password (Min 6 characters)", type="password")
+            
+            st.write("") # Spacer
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Sign Up", use_container_width=True, type="primary"):
+                    if len(password) < 6:
+                        st.error("Password must be at least 6 characters long.")
+                    elif not username:
+                        st.error("Please provide a User Name!")
+                    else:
+                        with st.spinner("Creating account..."):
+                            try:
+                                # Sign up AND save the custom username to Supabase metadata
+                                response = supabase.auth.sign_up({
+                                    "email": email, 
+                                    "password": password,
+                                    "options": {"data": {"username": username}}
+                                })
+                                st.session_state.user = response.user
+                                # Set cookies to remember them automatically after signup
+                                if response.session:
+                                    cookie_controller.set("colab_access", response.session.access_token, max_age=2592000)
+                                    cookie_controller.set("colab_refresh", response.session.refresh_token, max_age=2592000)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Sign up failed: {e}")
+            with col2:
+                if st.button("⬅️ Back", use_container_width=True):
+                    st.session_state.auth_step = "landing"
+                    st.rerun()
+
+    # CRITICAL: This stops the AI Brain code from running until they pass the gates.
     st.stop()
 
 
@@ -137,18 +165,20 @@ custom_css = """
 st.markdown(custom_css, unsafe_allow_html=True)
 st.markdown('<h1 class="premium-title">Colab Chat Bot</h1>', unsafe_allow_html=True)
 
+# Fetch the user's custom name (defaults to email prefix if missing)
+user_name = st.session_state.user.user_metadata.get("username", st.session_state.user.email.split('@')[0])
+
 # --- 4. Sidebar: The "Command Center" ---
 voice_input_text = ""
 with st.sidebar:
-    st.write(f"👤 **Account:**\n{st.session_state.user.email}")
+    st.write(f"👤 **Account:**\n{user_name}")
     
-    # 🆕 UPDATED LOGOUT: Now deletes the cookies so they don't auto-login next time!
     if st.button("🚪 Log Out", use_container_width=True):
         cookie_controller.remove("colab_access")
         cookie_controller.remove("colab_refresh")
         st.session_state.user = None
         st.session_state.chat_history = []
-        st.session_state.auth_step = "email"
+        st.session_state.auth_step = "landing"
         st.rerun()
         
     st.divider()
@@ -212,7 +242,7 @@ if "chat_history" not in st.session_state:
 # --- 6. Welcome Message & History Display ---
 if len(st.session_state.chat_history) == 0:
     with st.chat_message("assistant", avatar="🤖"):
-        st.markdown(f"### Welcome, {st.session_state.user.email.split('@')[0]}! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
+        st.markdown(f"### Welcome, {user_name}! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
 
 for message in st.session_state.chat_history:
     role = "user" if message.startswith("User:") else "assistant"
@@ -327,7 +357,8 @@ if final_input:
                     else:
                         gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
                     
-                    bot_persona = """You are Colab Chat Bot, a highly conversational, warm, and friendly AI assistant created by Yodha. 
+                    bot_persona = f"""You are Colab Chat Bot, a highly conversational, warm, and friendly AI assistant created by Yodha. 
+                    You are currently talking to a user named {user_name}.
                     When a user asks about your personal preferences, feelings, or true nature, respond exactly in this tone and style:
                     "I'm glad you're excited to chat with me. However, I should clarify that I don't have personal preferences... I'm a complex software program... But despite these limitations, I'm constantly learning and improving. How can I assist you today?"
                     For all other questions, maintain this same humble, human-like, and welcoming tone."""
