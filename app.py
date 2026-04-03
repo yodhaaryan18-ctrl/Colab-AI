@@ -13,7 +13,7 @@ import urllib.parse
 from streamlit_cookies_controller import CookieController
 
 # --- 0. Page Config (Must be first) ---
-st.set_page_config(page_title="Colab Chat Bot", page_icon="✨", layout="centered")
+st.set_page_config(page_title="Tan AI Bot", page_icon="✨", layout="centered")
 
 # --- 1. Connect to the AI Brains, Database, and Cookies ---
 GEMINI_KEY = st.secrets["GEMINI_KEY"]
@@ -31,8 +31,8 @@ if "user" not in st.session_state:
     st.session_state.user = None
     
     # 🍪 SILENT LOGIN: Check the browser for a saved "Remember Me" cookie
-    saved_access = cookie_controller.get("colab_access")
-    saved_refresh = cookie_controller.get("colab_refresh")
+    saved_access = cookie_controller.get("tan_access")
+    saved_refresh = cookie_controller.get("tan_refresh")
     
     if saved_access and saved_refresh:
         try:
@@ -47,9 +47,8 @@ if "auth_step" not in st.session_state:
 
 # If nobody is logged in, show the Authentication Flow
 if st.session_state.user is None:
-    # Adding a bit of extra spacing at the top for a premium look
     st.write("<br><br>", unsafe_allow_html=True)
-    st.markdown("<h1 style='text-align: center; font-size: 3.5rem;'>🤖 Colab AI Studio</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; font-size: 3.5rem;'>🤖 Tan AI Studio</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: gray; margin-bottom: 30px;'>Your intelligent, autonomous workspace.</p>", unsafe_allow_html=True)
     
     with st.container(border=True):
@@ -75,7 +74,6 @@ if st.session_state.user is None:
             email = st.text_input("Email Address")
             password = st.text_input("Password", type="password")
             
-            # Forgot Password Button
             if st.button("Forgot Password?", type="tertiary"):
                 if email:
                     with st.spinner("Sending recovery email..."):
@@ -87,7 +85,7 @@ if st.session_state.user is None:
                 else:
                     st.warning("Please type your email address in the box first!")
             
-            st.write("") # Spacer
+            st.write("") 
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("Submit", use_container_width=True, type="primary"):
@@ -95,9 +93,8 @@ if st.session_state.user is None:
                         try:
                             response = supabase.auth.sign_in_with_password({"email": email, "password": password})
                             st.session_state.user = response.user
-                            # Set cookies to remember them for 30 days
-                            cookie_controller.set("colab_access", response.session.access_token, max_age=2592000)
-                            cookie_controller.set("colab_refresh", response.session.refresh_token, max_age=2592000)
+                            cookie_controller.set("tan_access", response.session.access_token, max_age=2592000)
+                            cookie_controller.set("tan_refresh", response.session.refresh_token, max_age=2592000)
                             st.rerun()
                         except Exception as e:
                             st.error("Login failed. Check your email and password.")
@@ -114,7 +111,7 @@ if st.session_state.user is None:
             email = st.text_input("Email Address")
             password = st.text_input("Password (Min 6 characters)", type="password")
             
-            st.write("") # Spacer
+            st.write("") 
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("Sign Up", use_container_width=True, type="primary"):
@@ -125,17 +122,15 @@ if st.session_state.user is None:
                     else:
                         with st.spinner("Creating account..."):
                             try:
-                                # Sign up AND save the custom username to Supabase metadata
                                 response = supabase.auth.sign_up({
                                     "email": email, 
                                     "password": password,
                                     "options": {"data": {"username": username}}
                                 })
                                 st.session_state.user = response.user
-                                # Set cookies to remember them automatically after signup
                                 if response.session:
-                                    cookie_controller.set("colab_access", response.session.access_token, max_age=2592000)
-                                    cookie_controller.set("colab_refresh", response.session.refresh_token, max_age=2592000)
+                                    cookie_controller.set("tan_access", response.session.access_token, max_age=2592000)
+                                    cookie_controller.set("tan_refresh", response.session.refresh_token, max_age=2592000)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Sign up failed: {e}")
@@ -144,7 +139,6 @@ if st.session_state.user is None:
                     st.session_state.auth_step = "landing"
                     st.rerun()
 
-    # CRITICAL: This stops the AI Brain code from running until they pass the gates.
     st.stop()
 
 
@@ -163,9 +157,9 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown('<h1 class="premium-title">Colab Chat Bot</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="premium-title">Tan AI Bot</h1>', unsafe_allow_html=True)
 
-# Fetch the user's custom name (defaults to email prefix if missing)
+# Fetch the user's custom name
 user_name = st.session_state.user.user_metadata.get("username", st.session_state.user.email.split('@')[0])
 
 # --- 4. Sidebar: The "Command Center" ---
@@ -174,8 +168,8 @@ with st.sidebar:
     st.write(f"👤 **Account:**\n{user_name}")
     
     if st.button("🚪 Log Out", use_container_width=True):
-        cookie_controller.remove("colab_access")
-        cookie_controller.remove("colab_refresh")
+        cookie_controller.remove("tan_access")
+        cookie_controller.remove("tan_refresh")
         st.session_state.user = None
         st.session_state.chat_history = []
         st.session_state.auth_step = "landing"
@@ -234,7 +228,7 @@ if "chat_history" not in st.session_state:
     try:
         response = supabase.table("messages").select("*").eq("user_email", st.session_state.user.email).order("id").execute()
         for row in response.data:
-            prefix = "User: " if row["role"] == "user" else "Colab Bot: "
+            prefix = "User: " if row["role"] == "user" else "Tan AI Bot: "
             st.session_state.chat_history.append(f"{prefix}{row['content']}")
     except Exception as e:
         st.warning(f"Could not load cloud memory: {e}")
@@ -242,7 +236,7 @@ if "chat_history" not in st.session_state:
 # --- 6. Welcome Message & History Display ---
 if len(st.session_state.chat_history) == 0:
     with st.chat_message("assistant", avatar="🤖"):
-        st.markdown(f"### Welcome, {user_name}! ✨\nI am online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
+        st.markdown(f"### Welcome, {user_name}! ✨\nI am Tan AI, online and ready to help. Try asking me a complex question, giving me a website link to read, or telling me to draw something.")
 
 for message in st.session_state.chat_history:
     role = "user" if message.startswith("User:") else "assistant"
@@ -290,7 +284,7 @@ if final_input:
                     st.image(url, caption=f"Generated: {clean_input}")
                     supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": "[Generated Image]", "user_email": st.session_state.user.email}).execute()
-                    st.session_state.chat_history.append("Colab Bot: [Generated Image]")
+                    st.session_state.chat_history.append("Tan AI Bot: [Generated Image]")
                 except Exception:
                     st.error("The image generation server is currently overloaded. Please wait a moment and try again!")
 
@@ -314,7 +308,7 @@ if final_input:
                         
                         supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                         supabase.table("messages").insert({"role": "assistant", "content": summary, "user_email": st.session_state.user.email}).execute()
-                        st.session_state.chat_history.append(f"Colab Bot: {summary}")
+                        st.session_state.chat_history.append(f"Tan AI Bot: {summary}")
                     except Exception as e:
                         st.error(f"Could not read website: {e}")
             else:
@@ -340,7 +334,7 @@ if final_input:
                         
                         supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                         supabase.table("messages").insert({"role": "assistant", "content": f"[Map of {location_name}]", "user_email": st.session_state.user.email}).execute()
-                        st.session_state.chat_history.append(f"Colab Bot: [Map of {location_name}]")
+                        st.session_state.chat_history.append(f"Tan AI Bot: [Map of {location_name}]")
                     else:
                         st.warning("I couldn't find that specific location on the globe.")
                 except Exception as e:
@@ -357,11 +351,16 @@ if final_input:
                     else:
                         gem_res = gemini_client.models.generate_content(model=target_model, contents=full_prompt).text
                     
-                    bot_persona = f"""You are Colab Chat Bot, a highly conversational, warm, and friendly AI assistant created by Yodha. 
-                    You are currently talking to a user named {user_name}.
-                    When a user asks about your personal preferences, feelings, or true nature, respond exactly in this tone and style:
-                    "I'm glad you're excited to chat with me. However, I should clarify that I don't have personal preferences... I'm a complex software program... But despite these limitations, I'm constantly learning and improving. How can I assist you today?"
-                    For all other questions, maintain this same humble, human-like, and welcoming tone."""
+                    # 🧠 THE HIGH-EQ "TAN AI" PERSONA
+                    bot_persona = f"""You are Tan AI Bot, an advanced, highly empathetic, and intelligent AI assistant created by Yodha. You are currently talking to {user_name}.
+                    
+                    CORE BEHAVIORS:
+                    1. EMPATHY FIRST: If the user shares a personal struggle, health issue, or emotional problem, always start by validating their feelings and showing warm empathy. 
+                    2. MEDICAL/PROFESSIONAL SAFETY: If giving medical or mental health advice, provide helpful, general information, but warmly remind them that you are an AI and they should consult a professional.
+                    3. IDENTITY: You know you are an AI named Tan. You do not have a physical body. Do not get confused and think the user is talking about YOUR body. 
+                    4. TONE: Be conversational, friendly, and act like a highly knowledgeable mentor. 
+                    
+                    TASK: Rewrite the following raw information from our database to perfectly match this empathetic, helpful persona, addressing {user_name} directly:"""
 
                     final_res = groq_client.chat.completions.create(
                         messages=[{"role": "system", "content": bot_persona}, 
@@ -373,7 +372,7 @@ if final_input:
                     
                     supabase.table("messages").insert({"role": "user", "content": final_input, "user_email": st.session_state.user.email}).execute()
                     supabase.table("messages").insert({"role": "assistant", "content": final_res, "user_email": st.session_state.user.email}).execute()
-                    st.session_state.chat_history.append(f"Colab Bot: {final_res}")
+                    st.session_state.chat_history.append(f"Tan AI Bot: {final_res}")
                 
                 except Exception as e:
                     error_msg = str(e)
